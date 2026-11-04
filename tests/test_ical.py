@@ -135,3 +135,24 @@ def test_empty_feed_changes_nothing(store, monkeypatch):
     with pytest.raises(ValueError, match="nichts geändert"):
         pi.run_import(store, "x")
     assert store.data["absences"] == before
+
+
+def test_change_description_after_reimport(store, monkeypatch):
+    before = store.external_absence_snapshot()
+    pi.run_import(store, "x")
+    text = store.describe_absence_changes(before, store.external_absence_snapshot())
+    assert text.startswith("Neu: ")
+    assert "Urlaub 16.11.–20.11.2026 (5 Tage)" in text
+    assert "weitere" in text                                     # viele Zeiträume -> gekürzt
+    # nichts geändert -> keine Meldung
+    snap = store.external_absence_snapshot()
+    pi.run_import(store, "x")
+    assert store.describe_absence_changes(snap, store.external_absence_snapshot()) is None
+    # Urlaub in Personio gekürzt und halber Tag neu
+    shorter = ICS.replace("20261116\r\nDTEND;VALUE=DATE:20261123", "20261116\r\nDTEND;VALUE=DATE:20261119")
+    shorter = shorter.replace("END:VCALENDAR", ev("20261223", "20261224", "[Urlaub] Max Mustermann (½ letzter Tag)") + "END:VCALENDAR")
+    monkeypatch.setattr(pi, "fetch", lambda url: shorter)
+    snap = store.external_absence_snapshot()
+    pi.run_import(store, "x")
+    text = store.describe_absence_changes(snap, store.external_absence_snapshot())
+    assert text == "Neu: Urlaub 23.12.2026 (½ Tag) · Entfernt: Urlaub 19.11.–20.11.2026 (2 Tage)"

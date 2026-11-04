@@ -151,6 +151,8 @@ class OneDriveSync:
         self.http = session or requests.Session()
         self.timeout = timeout
         self.lock = threading.Lock()
+        self.last_action = None          # "upload" | "download" | "none" | "conflict"
+        self.last_remote_modified = ""
 
     # ------------------------------------------------------------ HTTP
     def _req(self, method: str, url: str, **kw) -> requests.Response:
@@ -195,6 +197,7 @@ class OneDriveSync:
             else:
                 headers["If-None-Match"] = "*"
         r = self._req("PUT", REMOTE + ":/content", data=body, headers=headers)
+        self.last_action = "upload"
         if r.status_code in (409, 412):
             raise Conflict(reason="Der Stand auf OneDrive wurde inzwischen von einem anderen Gerät geändert.")
         if r.status_code >= 400:
@@ -205,6 +208,8 @@ class OneDriveSync:
         return meta
 
     def _apply_remote(self, data: dict, meta: dict) -> None:
+        self.last_action = "download"
+        self.last_remote_modified = meta.get("lastModifiedDateTime", "")
         self.store.replace_data(data)
         self.state["etag"] = meta.get("eTag")
         self.state["hash"] = content_hash(self.store.data)
@@ -220,6 +225,7 @@ class OneDriveSync:
     def sync(self) -> str:
         """Automatischer Abgleich. Wirft Conflict, wenn beide Seiten geändert wurden."""
         with self.lock:
+            self.last_action = "none"
             if self.state["conflict"]:
                 raise Conflict(self.state["conflict"].get("remote_modified", ""), "Ein Konflikt ist noch offen.")
             meta = self.remote_meta()
@@ -250,6 +256,7 @@ class OneDriveSync:
             return self._finish("OneDrive ist aktuell.")
 
     def _conflict(self, meta: dict, reason: str) -> str:
+        self.last_action = "conflict"
         info = {"remote_modified": meta.get("lastModifiedDateTime", ""), "reason": reason}
         self._finish(f"⚠ Konflikt: {reason}", conflict=info)
         raise Conflict(info["remote_modified"], reason)

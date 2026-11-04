@@ -190,6 +190,8 @@ def default_data() -> dict:
             "holiday_region_asked": False,
             "pause_on_lock": False,
             "notify_target_reached": True,
+            "notify_personio_changes": True,   # Hinweis, wenn Personio neue/geänderte Abwesenheiten liefert
+            "notify_onedrive_download": True,  # Hinweis, wenn ein neuerer Stand von OneDrive geladen wurde
             "sleep_gap_minutes": 15,
             "personio": {
                 "enabled": False,
@@ -745,6 +747,48 @@ class Store:
                 n += 1
             self.touch()
             return n
+
+    def external_absence_snapshot(self, sources: tuple = ("personio", "ical")) -> dict:
+        """Abwesenheiten aus Personio (API/Kalender) – zum Erkennen von Änderungen nach einem Abruf."""
+        with self.lock:
+            return {k: (a["kind"], float(a.get("portion", 1.0)), a.get("half"))
+                    for k, a in self.data["absences"].items() if a.get("source") in sources}
+
+    def describe_absence_changes(self, before: dict, after: dict, max_items: int = 4) -> Optional[str]:
+        """Kurztext wie 'Neu: Urlaub 15.02.–01.03.2027 (11 Tage) · Entfernt: Urlaub 22.10.2026 (½ Tag)'."""
+        added = {k: v for k, v in after.items() if k not in before}
+        removed = {k: v for k, v in before.items() if k not in after}
+        changed = {k: v for k, v in after.items() if k in before and before[k] != v}
+        parts = []
+        for label, items in (("Neu", added), ("Geändert", changed), ("Entfernt", removed)):
+            if items:
+                texts = self._absence_ranges_text(items)
+                more = f" und {len(texts) - max_items} weitere" if len(texts) > max_items else ""
+                parts.append(f"{label}: " + "; ".join(texts[:max_items]) + more)
+        return " · ".join(parts) or None
+
+    def _absence_ranges_text(self, items: dict) -> list:
+        groups: list = []
+        for key in sorted(items):
+            d = parse_date(key)
+            kind, portion, _half = items[key]
+            if groups and groups[-1]["kind"] == kind and self._only_free_days_between(groups[-1]["end"], d):
+                groups[-1]["end"] = d
+                groups[-1]["days"] += portion
+            else:
+                groups.append({"kind": kind, "start": d, "end": d, "days": portion})
+        out = []
+        for g in groups:
+            label = ABSENCE_KINDS.get(g["kind"], {}).get("label", g["kind"])
+            if g["start"] == g["end"]:
+                span = fmt_date(g["start"])
+            elif g["start"].year == g["end"].year:
+                span = f"{g['start']:%d.%m.}–{fmt_date(g['end'])}"
+            else:
+                span = f"{fmt_date(g['start'])}–{fmt_date(g['end'])}"
+            days = "½ Tag" if g["days"] == 0.5 else f"{fmt_days(g['days'])} Tag{'e' if g['days'] != 1 else ''}"
+            out.append(f"{label} {span} ({days})")
+        return out
 
     def absence_groups(self, year: Optional[int] = None) -> list:
         """Fasst zusammenhängende Abwesenheiten zu Zeiträumen zusammen.

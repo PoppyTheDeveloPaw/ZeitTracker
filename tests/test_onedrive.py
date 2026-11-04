@@ -129,3 +129,16 @@ def test_invalid_remote_rejected(tmp_path):
     b, sb = pc(tmp_path, "b", g)
     with pytest.raises(od.OneDriveError, match="keine gültige"):
         sb.sync()
+
+
+def test_last_action_reports_download(tmp_path):
+    g = FakeGraph()
+    a, sa = pc(tmp_path, "a", g)
+    a.start_work(datetime(2026, 11, 4, 8, 0)); a.stop_work(datetime(2026, 11, 4, 9, 0))
+    sa.sync()
+    assert sa.last_action == "upload"
+    b, sb = pc(tmp_path, "b", g)
+    sb.sync()
+    assert sb.last_action == "download" and sb.last_remote_modified == g.modified
+    sb.sync()
+    assert sb.last_action == "none"

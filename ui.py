@@ -883,8 +883,16 @@ class SettingsWindow(BaseWindow):
         ttk.Checkbutton(t2, text="Beim Sperren des Bildschirms (Win+L) pausieren, beim Entsperren fortsetzen",
                         variable=self.lock_var).grid(row=5, column=0, columnspan=3, sticky="w", pady=2)
         ttk.Label(t2, text="Hinweise", style="Header.TLabel").grid(row=6, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        ttk.Checkbutton(t2, text="Benachrichtigen, wenn das Tagessoll erreicht ist",
-                        variable=self.notify_var).grid(row=7, column=0, columnspan=3, sticky="w", pady=2)
+        self.notify_personio_var = tk.BooleanVar(value=bool(s.get("notify_personio_changes", True)))
+        self.notify_od_var = tk.BooleanVar(value=bool(s.get("notify_onedrive_download", True)))
+        nf = ttk.Frame(t2)
+        nf.grid(row=7, column=0, columnspan=3, sticky="w", pady=2)
+        ttk.Checkbutton(nf, text="Benachrichtigen, wenn das Tagessoll erreicht ist",
+                        variable=self.notify_var).pack(anchor="w")
+        ttk.Checkbutton(nf, text="Benachrichtigen, wenn Personio neue oder geänderte Abwesenheiten liefert",
+                        variable=self.notify_personio_var).pack(anchor="w", pady=(2, 0))
+        ttk.Checkbutton(nf, text="Benachrichtigen, wenn ein neuerer Stand von OneDrive geladen wurde",
+                        variable=self.notify_od_var).pack(anchor="w", pady=(2, 0))
         ttk.Label(t2, text="PC aus/Standby länger als").grid(row=8, column=0, sticky="w", pady=(10, 2))
         self.gap_var = tk.StringVar(value=str(s.get("sleep_gap_minutes", 15)))
         ttk.Spinbox(t2, from_=2, to=240, width=5, textvariable=self.gap_var).grid(row=8, column=1, sticky="w", padx=4, pady=(10, 2))
@@ -1125,6 +1133,8 @@ class SettingsWindow(BaseWindow):
             s["shutdown_mode"] = next((k for k, v in SHUTDOWN_MODES.items() if v == self.shutdown_var.get()), "pause")
             s["pause_on_lock"] = bool(self.lock_var.get())
             s["notify_target_reached"] = bool(self.notify_var.get())
+            s["notify_personio_changes"] = bool(self.notify_personio_var.get())
+            s["notify_onedrive_download"] = bool(self.notify_od_var.get())
             s["sleep_gap_minutes"] = v["gap"]
             p = s["personio"]
             new_cid = self.p_client.get().strip()

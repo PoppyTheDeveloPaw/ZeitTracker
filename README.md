@@ -85,6 +85,9 @@ Die Zeiger zeigen die aktuelle Uhrzeit.
     (eine manuell gestartete Pause wird beim Entsperren nicht beendet)
   - Standby oder harter Neustart werden genauso behandelt (gleicher Tag = Pause, Folgetag = Feierabend)
 - **Startsaldo** für bereits vorhandene Überstunden.
+- **Benachrichtigungen** (Einstellungen › Allgemein, einzeln abschaltbar): Tagessoll erreicht
+  (auch mit Saldo), neue/geänderte/entfernte Abwesenheiten aus Personio nach einem automatischen
+  Abruf (nur wenn sich etwas geändert hat; Fehler werden einmal gemeldet), neuerer Stand von OneDrive geladen.
 
 ## Personio (standardmäßig deaktiviert)
 

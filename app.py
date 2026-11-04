@@ -47,6 +47,7 @@ class TrayApp:
         self._od_key = None
         self._od_running = False
         self._od_error = None
+        self._personio_err_notified = False
         self._od_last: datetime | None = None
 
     # ------------------------------------------------------------------ Start
@@ -55,6 +56,8 @@ class TrayApp:
         if self.store.settings.get("onedrive", {}).get("enabled"):
             try:
                 log.info("OneDrive beim Start: %s", self.onedrive().sync())
+                if self._od_sync.last_action == "download":
+                    self.root.after(4000, self.notify_onedrive_download)
             except onedrive.Conflict as e:
                 od_conflict = e
             except Exception as e:  # noqa: BLE001 – ohne Netz einfach lokal weiterarbeiten
@@ -346,6 +349,7 @@ class TrayApp:
         url = personio_ical.get_url(self.store) if "ical" in sources else ""
 
         def job():
+            before = self.store.external_absence_snapshot()
             parts, errors = [], []
             if "ical" in sources:
                 try:
@@ -363,20 +367,31 @@ class TrayApp:
                     with self.store.lock:
                         self.store.settings["personio"]["last_result"] = f"❌ {e}"[:500]
                         self.store.save()
+            changes = self.store.describe_absence_changes(before, self.store.external_absence_snapshot())
             if errors and not parts:
                 raise RuntimeError("\n".join(errors))
-            return "\n".join(parts + [f"❌ {e}" for e in errors])
+            return "\n".join(parts + [f"❌ {e}" for e in errors]), changes
 
         def done(result, error):
             self._sync_running = False
-            text = result if not error else f"❌ Personio-Abgleich fehlgeschlagen:\n{error}"
+            text, changes = result if result else (None, None)
+            text = text if not error else f"❌ Personio-Abgleich fehlgeschlagen:\n{error}"
             self.refresh_all()
+            want = self.store.settings.get("notify_personio_changes", True)
             if on_done:
-                on_done(text)
+                on_done(text + (f"\n{changes}" if changes else ""))
             elif manual:
-                self.notify(text[:250], "Personio")
-            elif error:
+                self.notify((changes or text)[:250], "Personio")
+            elif changes and want:
+                self.notify(changes[:250], "Neues aus Personio")
+            if error:
                 log.warning(text)
+                if not manual and want and not self._personio_err_notified:
+                    self.notify("Abwesenheiten konnten nicht aus Personio geladen werden. "
+                                "Details unter Einstellungen › Personio.", "Personio")
+                self._personio_err_notified = True
+            else:
+                self._personio_err_notified = False
         self.run_bg(job, done)
 
     def _auto_sync(self, now: datetime):
@@ -423,6 +438,8 @@ class TrayApp:
                 self.ask_onedrive_conflict(self._od_error)
             elif manual and not on_done:
                 self.notify(text[:250], "OneDrive")
+            elif not error and self._od_sync and self._od_sync.last_action == "download":
+                self.notify_onedrive_download()
             elif error:
                 log.warning("OneDrive: %s", error)
 
@@ -434,6 +451,18 @@ class TrayApp:
                 self._od_error = e
                 raise
         self.run_bg(job, done)
+
+    def notify_onedrive_download(self):
+        if not self.store.settings.get("notify_onedrive_download", True):
+            return
+        when = ""
+        mod = self._od_sync.last_remote_modified if self._od_sync else ""
+        if mod:
+            try:
+                when = datetime.fromisoformat(mod.replace("Z", "+00:00")).astimezone().strftime(" vom %d.%m.%Y %H:%M")
+            except ValueError:
+                pass
+        self.notify(f"Neuerer Stand{when} von OneDrive geladen – die Daten wurden aktualisiert.", "OneDrive")
 
     def _auto_onedrive(self, now: datetime):
         cfg = self.store.settings.get("onedrive", {})
