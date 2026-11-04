@@ -1,0 +1,54 @@
+name: Release
+
+# Wird ausgelöst, sobald ein Tag wie v1.0.0 gepusht wird:
+#   git tag v1.0.0
+#   git push origin v1.0.0
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # nötig, um ein Release anzulegen und die EXE hochzuladen
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Abhängigkeiten installieren
+        run: python -m pip install --upgrade pip -r requirements.txt pytest
+
+      - name: Tests ausführen
+        run: python -m pytest -q tests
+
+      - name: EXE bauen (build_exe.bat)
+        shell: cmd
+        run: build_exe.bat
+
+      - name: EXE mit Versionsnummer benennen
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          Copy-Item dist\ZeitTracker.exe "dist\ZeitTracker-$version.exe"
+          Get-FileHash "dist\ZeitTracker-$version.exe" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  ZeitTracker-$version.exe" } |
+            Out-File -Encoding ascii "dist\ZeitTracker-$version.exe.sha256"
+
+      - name: GitHub-Release anlegen
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ZeitTracker ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/ZeitTracker-${{ github.ref_name }}.exe
+            dist/ZeitTracker-${{ github.ref_name }}.exe.sha256

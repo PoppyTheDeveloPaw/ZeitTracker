@@ -1,0 +1,8 @@
+pystray>=0.19.5
+Pillow>=10.0
+tkcalendar>=1.6.1
+babel>=2.12
+holidays>=0.50
+requests>=2.31
+keyring>=24.0
+msal>=1.28

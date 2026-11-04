@@ -1,0 +1,20 @@
+# Persönliche Daten – niemals einchecken
+data.json
+data.*.json
+*.tmp
+backups/
+onedrive_token.bin
+onedrive_state.json
+zeittracker.log
+*.ics
+*.db
+*.db-shm
+*.db-wal
+
+# Build / Python
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+dist/
+*.spec
