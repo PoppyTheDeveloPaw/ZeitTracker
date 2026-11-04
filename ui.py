@@ -27,6 +27,36 @@ SCALE = 1.0          # Bildschirmskalierung (100 % = 1.0, 4K mit 200 % = 2.0) �
 def px(n: float) -> int:
     """Pixelmaß an die Windows-Skalierung anpassen (wichtig für 4K-Bildschirme)."""
     return int(round(n * SCALE))
+
+
+class FixedCalendar(Calendar):
+    """tkcalendar.Calendar mit korrekter Zuordnung Datum -> Kalenderfeld.
+
+    tkcalendar rechnet die Zeile über ISO-Kalenderwochen modulo 52. Am Jahreswechsel und in Jahren
+    mit 53 Wochen landen Markierungen dadurch im falschen Feld – z. B. erschienen in der
+    Dezember-2026-Ansicht Krankheitstage vom 5./6.01.2026 auf den Feldern 4./5.01.2027.
+    Hier wird stattdessen ab dem ersten angezeigten Tag gezählt.
+    """
+
+    def _grid_start(self) -> date:
+        return self._cal.monthdatescalendar(self._date.year, self._date.month)[0][0]
+
+    def _get_day_coords(self, day):
+        delta = (day - self._grid_start()).days
+        if 0 <= delta < 42:
+            return divmod(delta, 7)
+        return None, None
+
+    def _display_calendar(self):
+        super()._display_calendar()
+        # Kalenderwochen ebenfalls korrekt (tkcalendar zeigt Woche 53 als 1)
+        if getattr(self, "_week_nbs", None):
+            start = self._grid_start()
+            for i, lbl in enumerate(self._week_nbs):
+                monday = start + timedelta(days=7 * i + (1 if start.weekday() == 6 else 0))
+                lbl.configure(text=str(monday.isocalendar()[1]))
+
+
 KIND_KEYS = list(ABSENCE_KINDS.keys())
 KIND_LABELS = [ABSENCE_KINDS[k]["label"] for k in KIND_KEYS]
 GENERIC_KIND_LABELS = {
@@ -528,7 +558,7 @@ class AbsenceWindow(BaseWindow):
         # --- Kalender
         left = ttk.Frame(main)
         left.grid(row=0, column=0, sticky="nsew")
-        self.cal = Calendar(left, selectmode="day", locale="de_DE", firstweekday="monday",
+        self.cal = FixedCalendar(left, selectmode="day", locale="de_DE", firstweekday="monday",
                             showweeknumbers=True, date_pattern="dd.mm.yyyy",
                             font=("Segoe UI", 11), weekendforeground="#555555",
                             othermonthforeground="#aaaaaa", othermonthweforeground="#aaaaaa")
