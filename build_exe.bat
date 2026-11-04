@@ -6,7 +6,9 @@ if defined CI (set "PY=python") else (set "PY=py")
 %PY% -m pip install --upgrade pyinstaller -r requirements.txt || exit /b 1
 rem Beim GitHub-Release (Tag v1.2.3) die Versionsnummer in version.py schreiben
 if defined GITHUB_REF_NAME %PY% -c "import sys; v=sys.argv[1].lstrip('v'); open('version.py','w',encoding='utf-8').write(f'__version__ = {v!r}\n')" %GITHUB_REF_NAME% || exit /b 1
-%PY% -m PyInstaller --noconfirm --onefile --windowed --name ZeitTracker ^
+rem Versionsnummer als Windows-Versionsinfo in die EXE (Eigenschaften › Details), der Dateiname bleibt ZeitTracker.exe
+%PY% make_version_info.py version_info.txt || exit /b 1
+%PY% -m PyInstaller --noconfirm --onefile --windowed --name ZeitTracker --version-file version_info.txt ^
   --hidden-import babel.numbers --collect-all holidays --collect-all tkcalendar ^
   --hidden-import keyring.backends.Windows --hidden-import pystray._win32 --collect-all msal ^
   zeittracker.pyw || exit /b 1

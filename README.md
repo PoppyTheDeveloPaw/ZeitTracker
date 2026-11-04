@@ -24,8 +24,14 @@ git push origin v1.0.0
 ```
 
 Ablauf auf einem Windows-Server von GitHub: Tests ausführen → `build_exe.bat` → Release
-„ZeitTracker v1.0.0“ mit `ZeitTracker-v1.0.0.exe` und Prüfsumme (`.sha256`) sowie automatisch
+„ZeitTracker v1.0.0“ mit `ZeitTracker.exe` und Prüfsumme (`ZeitTracker.exe.sha256`) sowie automatisch
 erzeugten Änderungsnotizen. Schlagen die Tests fehl, wird kein Release angelegt.
+
+Die EXE heißt in jedem Release gleich, die Versionsnummer steht in der Datei selbst
+(Rechtsklick › Eigenschaften › Details, erzeugt von `make_version_info.py`). So bleiben
+Autostart-Eintrag und Verknüpfungen gültig, wenn die EXE von Hand durch eine neue ersetzt wird.
+Ist der Autostart aktiv, setzt der ZeitTracker den Eintrag beim Start außerdem immer auf die
+gerade laufende EXE – auch nach Verschieben oder Umbenennen.
 
 ## Updates
 

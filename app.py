@@ -70,6 +70,11 @@ class TrayApp:
                 od_conflict = e
             except Exception as e:  # noqa: BLE001 – ohne Netz einfach lokal weiterarbeiten
                 log.warning("OneDrive-Abgleich beim Start nicht möglich: %s", e)
+        try:
+            if winutil.sync_autostart(bool(self.store.settings.get("launch_with_windows"))):
+                log.info("Autostart-Eintrag auf %s aktualisiert", winutil.launch_command())
+        except Exception as e:  # noqa: BLE001
+            log.warning("Autostart-Eintrag konnte nicht aktualisiert werden: %s", e)
         now = now_dt()
         st = self.store.data["state"]
         if st.pop("left_running", False):

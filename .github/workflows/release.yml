@@ -35,14 +35,17 @@ jobs:
         shell: cmd
         run: build_exe.bat
 
-      - name: EXE mit Versionsnummer benennen
+      # Die EXE heißt immer ZeitTracker.exe (Version steckt in der Versionsinfo der Datei),
+      # damit Autostart-Eintrag und Verknüpfungen nach einem manuellen Austausch gültig bleiben.
+      - name: Versionsinfo prüfen und Prüfsumme erzeugen
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}"
-          Copy-Item dist\ZeitTracker.exe "dist\ZeitTracker-$version.exe"
-          Get-FileHash "dist\ZeitTracker-$version.exe" -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash.ToLower())  ZeitTracker-$version.exe" } |
-            Out-File -Encoding ascii "dist\ZeitTracker-$version.exe.sha256"
+          $expected = "${{ github.ref_name }}".TrimStart("v")
+          $actual = (Get-Item dist\ZeitTracker.exe).VersionInfo.ProductVersion
+          if ($actual -ne $expected) { throw "Versionsinfo der EXE ist '$actual', erwartet '$expected'" }
+          Get-FileHash dist\ZeitTracker.exe -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  ZeitTracker.exe" } |
+            Out-File -Encoding ascii dist\ZeitTracker.exe.sha256
 
       - name: GitHub-Release anlegen
         uses: softprops/action-gh-release@v2
@@ -50,5 +53,5 @@ jobs:
           name: ZeitTracker ${{ github.ref_name }}
           generate_release_notes: true
           files: |
-            dist/ZeitTracker-${{ github.ref_name }}.exe
-            dist/ZeitTracker-${{ github.ref_name }}.exe.sha256
+            dist/ZeitTracker.exe
+            dist/ZeitTracker.exe.sha256

@@ -36,6 +36,29 @@ def set_autostart(enabled: bool) -> None:
                 pass
 
 
+def sync_autostart(enabled: bool) -> bool:
+    """Autostart-Eintrag auf die gerade laufende EXE nachziehen.
+
+    Nötig, wenn die EXE verschoben oder durch eine Version mit anderem Dateinamen ersetzt wurde
+    (z. B. ZeitTracker-v1.0.0.exe -> ZeitTracker-v1.2.0.exe): der Run-Eintrag zeigt sonst weiter auf
+    die alte Datei. Nur für die gebaute EXE, damit Entwicklungsstarts den Eintrag nicht umbiegen.
+    Gibt True zurück, wenn der Eintrag neu geschrieben wurde.
+    """
+    if not (IS_WINDOWS and enabled and getattr(sys, "frozen", False)):
+        return False
+    import winreg
+    wanted = launch_command()
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ) as key:
+            current, _ = winreg.QueryValueEx(key, VALUE_NAME)
+    except FileNotFoundError:
+        current = None
+    if isinstance(current, str) and os.path.normcase(current) == os.path.normcase(wanted):
+        return False
+    set_autostart(True)
+    return True
+
+
 def single_instance() -> bool:
     """True, wenn dies die einzige laufende Instanz ist."""
     global _mutex
