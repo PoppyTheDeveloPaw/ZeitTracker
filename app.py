@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import sys
 import threading
@@ -14,6 +15,8 @@ import pystray
 import personio
 import personio_ical
 import onedrive
+import updater
+from version import __version__
 import ui
 import winutil
 from core import APP_NAME, Store, data_dir, fmt_hm, fmt_time, now_dt, parse_dt
@@ -39,6 +42,7 @@ class TrayApp:
         self._icon_key = None
         self._menu_key = None
         self._last_tick = now_dt()
+        self._started_at = now_dt()
         self._last_heartbeat = None
         self._prev_flags = None
         self._sync_running = False
@@ -48,6 +52,10 @@ class TrayApp:
         self._od_running = False
         self._od_error = None
         self._personio_err_notified = False
+        self.update_info: dict | None = None
+        self._update_last: datetime | None = None
+        self._update_running = False
+        self.updated_from: str | None = None
         self._od_last: datetime | None = None
 
     # ------------------------------------------------------------------ Start
@@ -92,6 +100,10 @@ class TrayApp:
             self.root.after(3000, lambda: self.notify(msg))
         if od_conflict:
             self.root.after(1500, lambda: self.ask_onedrive_conflict(od_conflict))
+        updater.cleanup_old()
+        if self.updated_from:
+            self.root.after(3500, lambda: self.notify(
+                f"Auf Version {__version__} aktualisiert (vorher {self.updated_from}).", "Update"))
         if not cfg.get("holiday_region") and not cfg.get("holiday_region_asked"):
             self.root.after(1200, lambda: ui.ask_holiday_region(self))
         self.root.mainloop()
@@ -131,6 +143,8 @@ class TrayApp:
             M("Einstellungen", cb("settings")),
             M("Mit Personio synchronisieren", cb("sync"),
               visible=lambda item: bool(self.personio_sources())),
+            M(lambda item: f"⬆  Update auf v{self.update_info['version']} installieren…" if self.update_info else "Update",
+              cb("update"), visible=lambda item: self.update_info is not None),
             M("Mit OneDrive abgleichen", cb("onedrive"),
               visible=lambda item: bool(self.store.settings.get("onedrive", {}).get("enabled"))),
             pystray.Menu.SEPARATOR,
@@ -189,6 +203,7 @@ class TrayApp:
             self._check_notifications(st)
             self._auto_sync(now)
             self._auto_onedrive(now)
+            self._auto_update_check(now)
         except Exception:
             log.exception("Tick fehlgeschlagen")
         self.root.after(self.TICK_MS, self._tick)
@@ -223,6 +238,12 @@ class TrayApp:
             return
         elif name == "onedrive":
             self.sync_onedrive(manual=True)
+            return
+        elif name == "update":
+            if self.update_info:
+                ui.UpdateDialog(self, self.update_info)
+            else:
+                self.check_updates(manual=True)
             return
         elif name == "quit":
             self.quit()
@@ -464,6 +485,73 @@ class TrayApp:
                 pass
         self.notify(f"Neuerer Stand{when} von OneDrive geladen – die Daten wurden aktualisiert.", "OneDrive")
 
+    # ------------------------------------------------------------------ Updates
+    def _auto_update_check(self, now: datetime):
+        if not self.store.settings.get("update_check", True) or self._update_running:
+            return
+        first_due = self._update_last is None and (now - self._started_at) >= timedelta(seconds=20)
+        if first_due or (self._update_last and now - self._update_last >= timedelta(hours=24)):
+            self.check_updates(manual=False)
+
+    def check_updates(self, manual: bool = True, on_done=None):
+        if self._update_running:
+            return
+        self._update_running = True
+        self._update_last = now_dt()
+
+        def done(info, error):
+            self._update_running = False
+            if error:
+                log.info("Update-Prüfung: %s", error)
+                text = f"❌ {error}"
+            elif info["newer"]:
+                self.update_info = info
+                self.update_icon(force=True)
+                text = f"Version {info['version']} ist verfügbar (installiert: {__version__})."
+                if manual:
+                    ui.UpdateDialog(self, info)
+                elif self.store.settings.get("update_notified") != info["version"]:
+                    self.notify(f"Version {info['version']} ist verfügbar. Installieren über das Menü "
+                                "(Rechtsklick › Update).", "Update verfügbar")
+                    with self.store.lock:
+                        self.store.settings["update_notified"] = info["version"]
+                        self.store.save()
+            elif __version__ == "dev":
+                text = (f"Entwicklerversion – automatische Updates nur für die Release-EXE. "
+                        f"Neueste Version auf GitHub: {info['version'] or '–'}.")
+            else:
+                text = f"Du hast die neueste Version ({__version__})."
+            if on_done:
+                on_done(text)
+            elif manual and not (info and info.get("newer")):
+                messagebox.showinfo("Updates", text)
+        self.run_bg(updater.check, done)
+
+    def perform_update(self, new_exe):
+        """Neue EXE ist geladen und geprüft: austauschen, neu starten, beenden."""
+        with self.store.lock:
+            if self.store.mode() != "idle":
+                self.store.data["state"]["left_running"] = True   # Erfassung läuft einfach weiter
+            self.store.heartbeat()
+        try:
+            if self.icon:
+                self.icon.stop()
+        except Exception:
+            pass
+        winutil.release_single_instance()
+        try:
+            updater.install(new_exe, args=["--updated-from", __version__])
+        except Exception as e:  # noqa: BLE001
+            log.exception("Update fehlgeschlagen")
+            messagebox.showerror("Update", f"{e}\n\nDer ZeitTracker wird neu gestartet.")
+            with self.store.lock:
+                self.store.data["state"].pop("left_running", None)
+                self.store.save()
+            os.execl(sys.executable, sys.executable, *sys.argv)
+        self.root.quit()
+        self.root.destroy()
+        os._exit(0)
+
     def _auto_onedrive(self, now: datetime):
         cfg = self.store.settings.get("onedrive", {})
         minutes = int(cfg.get("sync_minutes") or 0)
@@ -550,8 +638,14 @@ def main():
                                       "(ggf. über den Pfeil ^ bei den ausgeblendeten Symbolen).")
         r.destroy()
         sys.exit(0)
+    updated_from = None
+    if "--updated-from" in sys.argv:
+        i = sys.argv.index("--updated-from")
+        updated_from = sys.argv[i + 1] if i + 1 < len(sys.argv) else "?"
     try:
-        TrayApp().start()
+        tray = TrayApp()
+        tray.updated_from = updated_from
+        tray.start()
     except Exception:
         log.exception("Absturz")
         raise

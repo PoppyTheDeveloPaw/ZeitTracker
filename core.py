@@ -191,7 +191,9 @@ def default_data() -> dict:
             "pause_on_lock": False,
             "notify_target_reached": True,
             "notify_personio_changes": True,   # Hinweis, wenn Personio neue/geänderte Abwesenheiten liefert
-            "notify_onedrive_download": True,  # Hinweis, wenn ein neuerer Stand von OneDrive geladen wurde
+            "notify_onedrive_download": True,
+            "update_check": True,              # beim Start und täglich auf GitHub nach Updates suchen
+            "update_notified": "",             # Version, für die bereits benachrichtigt wurde  # Hinweis, wenn ein neuerer Stand von OneDrive geladen wurde
             "sleep_gap_minutes": 15,
             "personio": {
                 "enabled": False,

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import csv
+from pathlib import Path
+import sys
 import tkinter as tk
 from datetime import date, datetime, timedelta
 from tkinter import filedialog, messagebox, ttk
@@ -10,6 +12,9 @@ from tkcalendar import Calendar, DateEntry
 
 import personio
 import personio_ical
+import updater
+import webbrowser
+from version import __version__
 import winutil
 from core import (ABSENCE_KINDS, BUNDESLAENDER, HALF_LABELS, MONTHS, WEEKDAYS, WEEKDAYS_SHORT, _holidays,
                   daterange, fmt_date, fmt_days, fmt_hm, fmt_time, fmt_time_on, parse_clock, parse_date,
@@ -899,6 +904,19 @@ class SettingsWindow(BaseWindow):
         ttk.Label(t2, text="Minuten → als Pause bzw. Feierabend werten").grid(row=8, column=2, sticky="w", pady=(10, 2))
         ttk.Button(t2, text="Datenordner öffnen", command=lambda: winutil.open_folder(self.store.path.parent)).grid(row=9, column=0, sticky="w", pady=(16, 0))
         ttk.Label(t2, text=str(self.store.path), style="Muted.TLabel").grid(row=10, column=0, columnspan=3, sticky="w")
+        ttk.Label(t2, text="Updates", style="Header.TLabel").grid(row=11, column=0, columnspan=3, sticky="w", pady=(14, 0))
+        self.update_var = tk.BooleanVar(value=bool(s.get("update_check", True)))
+        uf = ttk.Frame(t2)
+        uf.grid(row=12, column=0, columnspan=3, sticky="w", pady=2)
+        ttk.Checkbutton(uf, text="Beim Start und täglich auf GitHub nach neuen Versionen suchen "
+                                 "(installiert wird nur nach Bestätigung)",
+                        variable=self.update_var).pack(anchor="w")
+        ub = ttk.Frame(uf)
+        ub.pack(anchor="w", pady=(4, 0))
+        ttk.Label(ub, text=f"Installierte Version: {__version__}").pack(side="left")
+        ttk.Button(ub, text="Jetzt nach Updates suchen", command=self.check_updates_now).pack(side="left", padx=10)
+        self.lbl_update = ttk.Label(uf, style="Muted.TLabel", wraplength=px(600), justify="left")
+        self.lbl_update.pack(anchor="w", pady=(4, 0))
 
         # ---------------- Personio
         t3 = ttk.Frame(nb, padding=12)
@@ -1133,6 +1151,7 @@ class SettingsWindow(BaseWindow):
             s["shutdown_mode"] = next((k for k, v in SHUTDOWN_MODES.items() if v == self.shutdown_var.get()), "pause")
             s["pause_on_lock"] = bool(self.lock_var.get())
             s["notify_target_reached"] = bool(self.notify_var.get())
+            s["update_check"] = bool(self.update_var.get())
             s["notify_personio_changes"] = bool(self.notify_personio_var.get())
             s["notify_onedrive_download"] = bool(self.notify_od_var.get())
             s["sleep_gap_minutes"] = v["gap"]
@@ -1265,6 +1284,14 @@ class SettingsWindow(BaseWindow):
                 if error:
                     self.lbl_od_status.config(text=f"❌ {error}")
         self.app.run_bg(lambda: self.app.onedrive().resolve(use), done)
+
+    def check_updates_now(self):
+        self.lbl_update.config(text="Suche nach Updates …")
+
+        def done(text):
+            if self.winfo_exists():
+                self.lbl_update.config(text=text)
+        self.app.check_updates(manual=True, on_done=done)
 
     def update_ical_state(self):
         st = ["!disabled"] if self.i_enabled.get() else ["disabled"]
@@ -1552,6 +1579,69 @@ class BalanceWindow(BaseWindow):
             for label, worked, target, diff, bal in self.rows:
                 w.writerow([label, fmt_hm(worked), fmt_hm(target), fmt_hm(diff, True), fmt_hm(bal, True)])
         messagebox.showinfo("Export", f"Gespeichert:\n{path}", parent=self)
+
+
+class UpdateDialog(tk.Toplevel):
+    """Zeigt ein verfügbares Update mit Änderungsnotizen – installiert erst nach Bestätigung."""
+
+    def __init__(self, app, info: dict):
+        super().__init__(app.root)
+        self.app, self.info = app, info
+        self.title("ZeitTracker – Update verfügbar")
+        self.attributes("-topmost", True)
+        self.resizable(True, True)
+        f = ttk.Frame(self, padding=16)
+        f.pack(fill="both", expand=True)
+        ttk.Label(f, text=f"Version {info['version']} ist verfügbar", style="Header.TLabel").pack(anchor="w")
+        ttk.Label(f, text=f"Installiert: {__version__}", style="Muted.TLabel").pack(anchor="w", pady=(2, 8))
+        ttk.Label(f, text="Änderungen:").pack(anchor="w")
+        txt = tk.Text(f, height=12, width=70, wrap="word", font=("Segoe UI", 10), relief="flat",
+                      background="#f7f7f7", padx=8, pady=6)
+        txt.insert("1.0", info.get("notes") or "Keine Änderungsnotizen hinterlegt.")
+        txt.config(state="disabled")
+        txt.pack(fill="both", expand=True, pady=(2, 8))
+        self.can_install = updater.is_frozen() and info.get("exe_url") and info.get("sha_url")
+        hint = ("Die Zeiterfassung läuft während des Updates weiter. Deine Daten bleiben unverändert."
+                if self.can_install else
+                "Der ZeitTracker läuft nicht als EXE (oder das Release enthält keine EXE) – "
+                "bitte die neue Version über GitHub herunterladen.")
+        ttk.Label(f, text=hint, style="Muted.TLabel", wraplength=px(520), justify="left").pack(anchor="w")
+        self.progress = ttk.Progressbar(f, mode="determinate", maximum=100)
+        self.lbl = ttk.Label(f, style="Muted.TLabel")
+        bf = ttk.Frame(f)
+        bf.pack(fill="x", pady=(12, 0))
+        self.btn_install = ttk.Button(bf, text="Jetzt installieren und neu starten", command=self.install)
+        if self.can_install:
+            self.btn_install.pack(side="right")
+        ttk.Button(bf, text="Später", command=self.destroy).pack(side="right", padx=6)
+        ttk.Button(bf, text="Auf GitHub ansehen", command=lambda: webbrowser.open(info["page"])).pack(side="left")
+        self.focus_force()
+
+    def install(self):
+        self.btn_install.state(["disabled"])
+        self.progress.pack(fill="x", pady=(10, 0))
+        self.lbl.pack(anchor="w")
+        self.lbl.config(text="Lade herunter …")
+        target = Path(sys.executable).parent
+
+        def prog(done, total):
+            self.app.q.put(("call", self._progress, done, total))
+
+        def finished(path, error):
+            if error:
+                if self.winfo_exists():
+                    self.lbl.config(text=f"❌ {error}")
+                    self.btn_install.state(["!disabled"])
+                return
+            self.lbl.config(text="Prüfsumme korrekt – installiere und starte neu …")
+            self.update()
+            self.app.perform_update(path)
+        self.app.run_bg(lambda: updater.download(self.info, target, progress=prog), finished)
+
+    def _progress(self, done, total):
+        if self.winfo_exists() and total:
+            self.progress["value"] = done * 100 / total
+            self.lbl.config(text=f"Lade herunter … {done / 1_048_576:.1f} von {total / 1_048_576:.1f} MB")
 
 
 def ask_holiday_region(app) -> None:

@@ -27,6 +27,18 @@ Ablauf auf einem Windows-Server von GitHub: Tests ausführen → `build_exe.bat`
 „ZeitTracker v1.0.0“ mit `ZeitTracker-v1.0.0.exe` und Prüfsumme (`.sha256`) sowie automatisch
 erzeugten Änderungsnotizen. Schlagen die Tests fehl, wird kein Release angelegt.
 
+## Updates
+
+Die Release-EXE sucht beim Start und danach täglich auf GitHub nach einer neuen Version
+(abschaltbar unter Einstellungen › Allgemein › Updates). Ist eine verfügbar, kommt eine
+Benachrichtigung und im Rechtsklick-Menü erscheint „Update auf vX.Y.Z installieren…“.
+**Installiert wird nur nach Bestätigung:** Der Dialog zeigt die Änderungsnotizen, lädt die neue
+EXE herunter, prüft die SHA256-Prüfsumme, tauscht die Datei aus und startet neu. Eine laufende
+Zeiterfassung läuft dabei weiter, die Daten in `%APPDATA%\ZeitTracker` bleiben unverändert.
+
+Die Versionsnummer schreibt `build_exe.bat` beim GitHub-Build aus dem Tag in `version.py`.
+Lokal gebaute Versionen heißen `dev` und bieten keine automatischen Updates an.
+
 ## Das Symbol
 
 | Teil der Uhr | Grün | Rot |

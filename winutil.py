@@ -46,6 +46,15 @@ def single_instance() -> bool:
     return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
 
 
+def release_single_instance() -> None:
+    """Sperre freigeben, damit eine neu gestartete Version (Update) laufen darf."""
+    global _mutex
+    if IS_WINDOWS and _mutex:
+        import ctypes
+        ctypes.windll.kernel32.CloseHandle(_mutex)
+        _mutex = None
+
+
 def enable_dpi_awareness() -> None:
     if not IS_WINDOWS:
         return
