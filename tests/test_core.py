@@ -6,6 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import core  # noqa: E402
 from core import Store, fmt_hm, iso, parse_clock, parse_hm  # noqa: E402
 
 MON = date(2026, 11, 2)  # Montag
@@ -201,6 +202,29 @@ def test_holidays_rp(store):
     store.settings["holiday_region"] = "BE"; store._holiday_cache.clear()
     assert store.holiday_name(fronleichnam) is None
     assert store.target_minutes(fronleichnam) == 480
+
+
+def test_holidays_survive_missing_translations(store, monkeypatch):
+    """Fehlen die Übersetzungsdateien (z. B. gelöschter PyInstaller-Ordner), gelten Feiertage trotzdem."""
+    real = core._holidays.country_holidays
+
+    def no_german(*a, **kw):
+        if kw.get("language") == "de":
+            raise FileNotFoundError("locale fehlt")
+        return real(*a, **kw)
+    monkeypatch.setattr(core._holidays, "country_holidays", no_german)
+    store.settings["holiday_region"] = "HE"
+    assert store.holiday_name(date(2026, 12, 25))
+    assert store.target_minutes(date(2026, 12, 25)) == 0
+
+
+def test_holidays_failure_is_not_cached(store, monkeypatch):
+    real = core._holidays.country_holidays
+    monkeypatch.setattr(core._holidays, "country_holidays", lambda *a, **kw: 1 / 0)
+    store.settings["holiday_region"] = "HE"
+    assert store.holiday_name(date(2026, 12, 25)) is None
+    monkeypatch.setattr(core._holidays, "country_holidays", real)
+    assert store.holiday_name(date(2026, 12, 25))
 
 
 def test_parse_plus_one():

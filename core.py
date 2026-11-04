@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import os
 import shutil
 import threading
@@ -23,6 +24,7 @@ except Exception:  # pragma: no cover
     _holidays = None
 
 APP_NAME = "ZeitTracker"
+log = logging.getLogger(APP_NAME)
 
 WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
 WEEKDAYS_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
@@ -380,13 +382,18 @@ class Store:
         key = (region, d.year)
         if key not in self._holiday_cache:
             try:
+                h = _holidays.country_holidays("DE", subdiv=region, years=d.year, language="de")
+            except Exception as e:  # noqa: BLE001
+                # Deutsche Namen brauchen Übersetzungsdateien; fehlen die, lieber englische Namen
+                # als gar keine Feiertage – sonst zählt jeder Feiertag als Arbeitstag ins Minus.
+                log.warning("Feiertage %s %s auf Deutsch nicht ladbar (%s), versuche ohne Übersetzung",
+                            region, d.year, e)
                 try:
-                    h = _holidays.country_holidays("DE", subdiv=region, years=d.year, language="de")
-                except TypeError:
                     h = _holidays.country_holidays("DE", subdiv=region, years=d.year)
-                self._holiday_cache[key] = dict(h)
-            except Exception:
-                self._holiday_cache[key] = {}
+                except Exception:  # noqa: BLE001
+                    log.exception("Feiertage %s %s konnten nicht geladen werden", region, d.year)
+                    return None   # nicht zwischenspeichern – beim nächsten Aufruf erneut versuchen
+            self._holiday_cache[key] = dict(h)
         return self._holiday_cache[key].get(d)
 
     def absence_for(self, d: date) -> Optional[dict]:

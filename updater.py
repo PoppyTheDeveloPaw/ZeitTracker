@@ -137,8 +137,24 @@ def install(new_exe: Path, current_exe: Optional[Path] = None, args: Optional[li
         if sys.platform.startswith("win"):
             flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
         subprocess.Popen([str(current)] + (args or []), close_fds=True, creationflags=flags,
-                         cwd=str(current.parent))
+                         cwd=str(current.parent), env=clean_launch_env())
     return old
+
+
+def clean_launch_env(base: Optional[dict] = None) -> dict:
+    """Umgebung für den Start der neuen EXE ohne die Variablen des PyInstaller-Bootloaders.
+
+    Ohne das hält sich die neue EXE für einen Unterprozess der alten und benutzt deren
+    Entpack-Ordner (_MEIxxxx) weiter – mit den Dateien der alten Version. Der Ordner wird
+    gelöscht, sobald sich die alte EXE beendet; danach fehlen der neuen Instanz Daten wie
+    Feiertage oder Kalender-Lokalisierung, bis sie neu gestartet wird.
+    """
+    env = dict(os.environ if base is None else base)
+    for k in list(env):
+        if k.upper().startswith("_PYI_") or k.upper() == "_MEIPASS2":
+            env.pop(k)
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"   # PyInstaller >= 6.9: als eigenständigen Start behandeln
+    return env
 
 
 def cleanup_old(current_exe: Optional[Path] = None) -> None:

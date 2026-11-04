@@ -90,3 +90,25 @@ def test_install_swaps_exe_and_cleanup(tmp_path):
     assert cur.read_bytes() == b"neu" and old.read_bytes() == b"alt" and not new.exists()
     up.cleanup_old(cur)
     assert not old.exists() and cur.exists()
+
+
+def test_clean_launch_env_drops_bootloader_vars():
+    env = up.clean_launch_env({"PATH": "x", "_PYI_APPLICATION_HOME_DIR": r"C:\Temp\_MEI123",
+                               "_PYI_ARCHIVE_FILE": "a", "_PYI_PARENT_PROCESS_LEVEL": "1",
+                               "_MEIPASS2": "m"})
+    assert env == {"PATH": "x", "PYINSTALLER_RESET_ENVIRONMENT": "1"}
+
+
+def test_install_launches_new_exe_with_clean_env(tmp_path, monkeypatch):
+    cur = tmp_path / "ZeitTracker.exe"
+    cur.write_bytes(b"alt")
+    new = tmp_path / "ZeitTracker.new-1.3.1.exe"
+    new.write_bytes(b"neu")
+    monkeypatch.setenv("_PYI_APPLICATION_HOME_DIR", r"C:\Temp\_MEI123")
+    calls = []
+    monkeypatch.setattr(up.subprocess, "Popen", lambda cmd, **kw: calls.append((cmd, kw)))
+    up.install(new, current_exe=cur, args=["--updated-from", "1.3.0"])
+    (cmd, kw), = calls
+    assert cmd == [str(cur), "--updated-from", "1.3.0"]
+    assert "_PYI_APPLICATION_HOME_DIR" not in kw["env"]
+    assert kw["env"]["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
